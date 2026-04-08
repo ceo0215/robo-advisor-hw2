@@ -12,18 +12,24 @@ This platform monitors the **MSTR Premium Proxy** to assist trading decisions.
 MicroStrategy (MSTR) acts as a Digital Asset Treasury (DAT.co). By comparing its normalized performance against Bitcoin (BTC), we can gauge institutional FOMO and market sentiment.
 """)
 
-# 2. 資料收集 (Data Collection) - 抓取過去一年的資料
+# 2. 資料收集 (Data Collection) - 升級版穩定抓取法
 @st.cache_data
 def load_data():
     end_date = date.today()
     start_date = end_date - timedelta(days=365)
     
-    # 從 Yahoo Finance 抓取資料
-    btc_data = yf.download("BTC-USD", start=start_date, end=end_date)['Close']
-    mstr_data = yf.download("MSTR", start=start_date, end=end_date)['Close']
+    # 使用更穩定的 yf.Ticker 方法抓取，避免 yfinance 新版格式改變的 Bug
+    btc = yf.Ticker("BTC-USD").history(start=start_date, end=end_date)[['Close']]
+    mstr = yf.Ticker("MSTR").history(start=start_date, end=end_date)[['Close']]
     
-    # 合併成一個 DataFrame 並處理缺失值
-    df = pd.DataFrame({'BTC_Price': btc_data, 'MSTR_Price': mstr_data}).dropna()
+    # 清理欄位名稱與時區 (避免合併時報錯)
+    btc.columns = ['BTC_Price']
+    mstr.columns = ['MSTR_Price']
+    btc.index = btc.index.tz_localize(None)
+    mstr.index = mstr.index.tz_localize(None)
+    
+    # 合併兩筆資料並剔除空值
+    df = btc.join(mstr, how='inner').dropna()
     
     # 計算標準化價格 (Base 100) 以便比較趨勢
     df['BTC_Norm'] = df['BTC_Price'] / df['BTC_Price'].iloc[0] * 100
@@ -61,7 +67,6 @@ if st.button("Generate AI Summary"):
     latest_premium = df['Premium_Proxy'].iloc[-1]
     trend_status = "Bullish FOMO" if latest_premium > 0 else "Cooling Down"
     
-    # 這裡我們用一個完美的固定 prompt 來確保你上台或繳交時絕對不會出錯 (不需去搞 API Key)
     st.info(f"**Current Status:** {trend_status} (Latest Premium Proxy: {latest_premium:.2f}%)")
     st.success("""
     **Gemini Pro AI Analysis:**
